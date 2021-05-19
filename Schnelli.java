@@ -18,7 +18,7 @@ public class Rocky extends AI {
 
 	byte pearlNr, goalNr, scanRange, scanIgnore; // byte reicht als Größe
 	int score, disX, disY, disTotal, goalRange, time, panicArea, refreshRate; // müssen ints sein
-	double direction, pi, a, fleeLimit;
+	double direction, pi, a, b, fleeLimit;
 	Path2D[] obstacles;
 	Point[] pearls, wonPearls;
 	Point player, goal, closestObst, oldPlayerPos;
@@ -27,15 +27,17 @@ public class Rocky extends AI {
 	public Rocky(Info info) {
 		super(info);
 		enlistForTournament(571104, 571394);
-		// factor for determining seek/flee balance (<1= more flee, >1 = more seek)
+		// factor for determining seek
 		a = 1;
+		// factor for determining flee
+		b = 1;
 		// refresh rate for determining direction
 		refreshRate = 10;
 		// length of obstacle scan
-		scanRange = 30;
+		scanRange = 50;
 		// if goal becomes within this reach, ignore obstacles
 		// remove when better obstacle algorithm?
-		scanIgnore = 15;
+		scanIgnore = 30;
 		// flee completely if obstacle within this range
 		// remove when better obstacle algorithm?
 		panicArea = 3;
@@ -44,8 +46,6 @@ public class Rocky extends AI {
 		fleeLimit = pi * 0.5;
 		// set true to display console info about the execution of the code
 		terminalTracking = true;
-		// for initializing level information at first update
-		initialized = false;
 	}
 
 	@Override
@@ -66,11 +66,10 @@ public class Rocky extends AI {
 
 		// initialize all information only required once after generation of the level
 		// = diver sees environment for the first time
-		if (!initialized) {
+		if (time == 0) {
 			initialize();
 		}
 
-		initialize();
 		// get current position of the player
 		// = diver knows where he is located
 		player.x = info.getX();
@@ -87,7 +86,7 @@ public class Rocky extends AI {
 		// determine total distance to goal
 		disTotal = calcDistance(disX, disY);
 
-		// determin the most efficient direction (based on player, goal & obstacle
+		// determine the most efficient direction (based on player, goal & obstacle
 		// position
 		// = diver searches the quickest way towards his goal without striking obstacles
 		determineDirection();
@@ -98,8 +97,8 @@ public class Rocky extends AI {
 			// memorize pearl as taken
 			wonPearls[goalNr] = goal;
 			// swim up to start with less obstructed point for next pearl
-			time = -refreshRate*5;
-			direction = pi / 2;
+			//time = -refreshRate * 5;
+			//direction = pi / 2;
 		}
 
 		// update the score
@@ -129,6 +128,8 @@ public class Rocky extends AI {
 		obstacles = info.getScene().getObstacles();
 		// only initialize once
 		initialized = true;
+		
+		System.out.println("initialized!!");
 	}
 
 	public void determineGoal() {
@@ -179,49 +180,23 @@ public class Rocky extends AI {
 			// swim to goal
 			direction = a * seek(player, goal);
 			// if avoidObstacles return 0, no obstacle was sighted within range
-			if (avoidObstacles() == 0)
+			if (avoidObstacles() == 0) {
 				// reset factor to avoid inadequate number for direction
 				direction /= a;
+			}
 			// if an obstacle was sighted within the chosen panic range
-			else if (avoidObstacles() == 5) {
-				panicMode();
-			} else {
+			// else if (avoidObstacles() == 5) panicMode();
+			else {
 				// if obstacle is found, add the flee direction from this obstacle
 				direction += avoidObstacles();
-				// correct direction of value too excessive
-				// if (direction < seek(player.x, player.y, closestObst.x, closestObst.y)
-				// -fleeLimit)
-				// direction = seek(player.x, player.y, closestObst.x, closestObst.y) -
-				// fleeLimit;
-				// else if (Math.abs(direction) > seek(player.x, player.y, closestObst.x,
-				// closestObst.y) + fleeLimit)
-				// direction = seek(player.x, player.y, closestObst.x, closestObst.y) +
-				// fleeLimit;
+				direction /= (a+b);
 			}
 
 		}
-		
-		/*
-
-		if (time % (refreshRate * 3) == 0) {
-			// if player hasn't changed position some time (stuck)
-			if (calcDistance(player.x, player.y, oldPlayerPos.x, oldPlayerPos.y) == 0) {
-				// flee next updates to get away from there
-				time -= refreshRate * 3;
-				// if there's an obstacle
-				if (avoidObstacles() != 0)
-					panicMode();
-			}
-			// memorize the oldPlayerPosition
-			oldPlayerPos.x = player.x;
-			oldPlayerPos.y = player.y;
-		}*/
 
 		// if direction exceeds limit of pi
-		if (direction < -pi)
-			direction += (2 * pi);
-		else if (direction > pi)
-			direction -= (2 * pi);
+		if(direction<-pi)direction+=(2*pi);else if(direction>pi)direction-=(2*pi);
+
 	}
 
 	public double avoidObstacles() {
@@ -260,7 +235,7 @@ public class Rocky extends AI {
 												- pi / 2
 												|| seek(player.x, player.y, player.x + n * x,
 														player.y + n * y) < direction + pi / 2) {
-											// memorize position of currently closest obstacl
+											// memorize position of currently closest obstacle
 											closestObst.x = player.x + n * x;
 											closestObst.y = player.y + n * y;
 											// mark closeness value as new closest one
@@ -284,12 +259,13 @@ public class Rocky extends AI {
 		if (fleeDirection == 10) {
 			if (terminalTracking) {
 				System.out.println("Closeness to obstacle: " + cDis);
+				System.out.println();
 			}
 			// take direction for diving directly towards closest obstacle
 			fleeDirection = seek(player, closestObst);
 			// from there, turn right for 90 degrees divided by closeness (more distance to
 			// obstacle = less avoiding)
-			if (goal.x < player.x) {
+			if (goal.x > player.x) {
 				// flee to the left
 				fleeDirection += pi / cn;
 			} else {
@@ -297,12 +273,11 @@ public class Rocky extends AI {
 				fleeDirection -= pi / cn;
 			}
 			// divide by factor
-			fleeDirection /= a;
+			fleeDirection *= b;
 		}
 
-		if (cn <= panicArea) {
-			fleeDirection = 5;
-		}
+		// if (cn <= panicArea) fleeDirection = 5;
+
 		// returns 0 = no obstacle found, only seek
 		// returns 5 = panic mode; flee from goal for some time
 		// returns other = add fleeing in a curve relative to distance and position of
@@ -310,32 +285,19 @@ public class Rocky extends AI {
 		return fleeDirection;
 	}
 
-	public void panicMode() {
-		if (terminalTracking)
-			System.out.println("Panic mode active!");
-		if (time >= 0) {
-			// in case the player is in the obstacle (even possible?)
-			if (calcDistance(player, closestObst) == 0) {
-				direction = flee(player, goal);
-			} else {
-				time = -refreshRate * 3;
-				direction = (flee(player, closestObst)) / a * 3 + (seek(player, goal) * a) / 4;
-			}
-		}
-	}
-
 	public void displayGameData() {
 		if (terminalTracking == true) {
+			// tracking of time
+			System.out.println("Time: " + time);
 			// tracking of player position
 			System.out.println("Player position: (" + player.x + "/" + player.y + ")");
 			// tracking of the currently searched pearl
-			System.out.println("Pearl " + (score + 1) + ": (" + goal.x + "/" + goal.y + ")");
+			System.out.println("Pearl " + (score + 1) + "(current goal): (" + goal.x + "/" + goal.y + ")");
 			// tracking of the distance to the goal
 			System.out.println("Distance: (" + disX + "/" + disY + "), total (average): " + disTotal);
 			// tracking of the player direction
 			System.out.println("Direction: " + direction + "(Pi) Degrees: " + (int) ((Math.toDegrees(direction))) + "°");
-			// tracking of time
-			System.out.println("Time: " + time + " (negative if panic mode or just won pearl)");
+			System.out.println();
 		}
 	}
 
@@ -343,16 +305,16 @@ public class Rocky extends AI {
 		return Math.atan2((y2 - y1), (x2 - x1));
 	}
 
-	public double seek(Point a, Point b) {
-		return Math.atan2((b.y - a.y), (b.x - a.x));
+	public double seek(Point p1, Point p2) {
+		return Math.atan2((p2.y - p1.y), (p2.x - p1.x));
 	}
 
 	public double flee(double x1, double y1, double x2, double y2) {
 		return Math.atan2((y1 - y2), (x1 - x2));
 	}
 
-	public double flee(Point a, Point b) {
-		return Math.atan2((a.y - b.y), (a.x - b.x));
+	public double flee(Point p1, Point p2) {
+		return Math.atan2((p1.y - p2.y), (p1.x - p2.x));
 	}
 
 	// calculate distance with two sets of x/y-coordinates
@@ -370,3 +332,38 @@ public class Rocky extends AI {
 		return (Math.abs(p2.x - p1.x) + Math.abs(p2.y - p1.y) / 2);
 	}
 }
+
+//OLD CODE WHICH COULD STILL PROVE USEFUL
+
+//implementation of panic mode method still inside other methods as comments
+
+/*
+ * 
+ * if (time % (refreshRate * 3) == 0) { // if player hasn't changed position
+ * some time (stuck) if (calcDistance(player.x, player.y, oldPlayerPos.x,
+ * oldPlayerPos.y) == 0) { // flee next updates to get away from there time -=
+ * refreshRate * 3; // if there's an obstacle if (avoidObstacles() != 0)
+ * panicMode(); } // memorize the oldPlayerPosition oldPlayerPos.x = player.x;
+ * oldPlayerPos.y = player.y; }
+ */
+
+/*
+ * 
+ * public void panicMode() { if (terminalTracking)
+ * System.out.println("Panic mode active!"); if (time >= 0) { // in case the
+ * player is in the obstacle (even possible?) if (calcDistance(player,
+ * closestObst) == 0) { direction = flee(player, goal); } else { time =
+ * -refreshRate * 3; direction = (flee(player, closestObst)) / a * 3 +
+ * (seek(player, goal) * a) / 4; } } }
+ * 
+ */
+
+//correct direction of value too excessive
+// if (direction < seek(player.x, player.y, closestObst.x, closestObst.y)
+// -fleeLimit)
+// direction = seek(player.x, player.y, closestObst.x, closestObst.y) -
+// fleeLimit;
+// else if (Math.abs(direction) > seek(player.x, player.y, closestObst.x,
+// closestObst.y) + fleeLimit)
+// direction = seek(player.x, player.y, closestObst.x, closestObst.y) +
+// fleeLimit;
