@@ -16,13 +16,13 @@ import lenz.htw.ai4g.ai.PlayerAction;
 
 public class Rocky extends AI {
 
-	byte pearlNr, goalNr, scanRange, scanIgnore; // byte reicht als Größe
-	int score, disX, disY, disTotal, goalRange, time, panicArea, refreshRate; // müssen ints sein
-	double direction, pi, a, b, fleeLimit;
+	byte pearlNr, goalNr, scanRange, scanIgnore;
+	int score, disX, disY, disTotal, goalRange, time, panicArea, refreshRate;
+	double direction, pi, a, b, fleeLimit, evasion;
 	Path2D[] obstacles;
 	Point[] pearls, wonPearls;
 	Point player, goal, closestObst, oldPlayerPos;
-	boolean initialized, terminalTracking;
+	boolean initialized, terminalTracking, panicMode;
 
 	public Rocky(Info info) {
 		super(info);
@@ -32,20 +32,24 @@ public class Rocky extends AI {
 		// factor for determining flee
 		b = 1;
 		// refresh rate for determining direction
-		refreshRate = 10;
+		refreshRate = 3;
 		// length of obstacle scan
-		scanRange = 50;
+		scanRange = 10;
 		// if goal becomes within this reach, ignore obstacles
 		// remove when better obstacle algorithm?
-		scanIgnore = 30;
+		scanIgnore = 0;
 		// flee completely if obstacle within this range
 		// remove when better obstacle algorithm?
-		panicArea = 3;
+		panicArea = 1;
 		// limit for avoiding an obstacle
 		// really useful? candidate for removal
 		fleeLimit = pi * 0.5;
 		// set true to display console info about the execution of the code
 		terminalTracking = true;
+
+		initialized = false;
+
+		panicMode = false;
 	}
 
 	@Override
@@ -66,7 +70,7 @@ public class Rocky extends AI {
 
 		// initialize all information only required once after generation of the level
 		// = diver sees environment for the first time
-		if (time == 0) {
+		if (initialized == false) {
 			initialize();
 		}
 
@@ -97,8 +101,8 @@ public class Rocky extends AI {
 			// memorize pearl as taken
 			wonPearls[goalNr] = goal;
 			// swim up to start with less obstructed point for next pearl
-			//time = -refreshRate * 5;
-			//direction = pi / 2;
+			// time = -refreshRate * 5;
+			// direction = pi / 2;
 		}
 
 		// update the score
@@ -128,8 +132,6 @@ public class Rocky extends AI {
 		obstacles = info.getScene().getObstacles();
 		// only initialize once
 		initialized = true;
-		
-		System.out.println("initialized!!");
 	}
 
 	public void determineGoal() {
@@ -180,22 +182,32 @@ public class Rocky extends AI {
 			// swim to goal
 			direction = a * seek(player, goal);
 			// if avoidObstacles return 0, no obstacle was sighted within range
-			if (avoidObstacles() == 0) {
+			evasion = avoidObstacles();
+			System.out.println(evasion);
+			if (evasion == 0) {
+				panicMode = false;
 				// reset factor to avoid inadequate number for direction
 				direction /= a;
 			}
 			// if an obstacle was sighted within the chosen panic range
 			// else if (avoidObstacles() == 5) panicMode();
-			else {
+			else if (panicMode == true) {
+				if (time == 0) panicMode = false;
+				else if (time >= 0) {
+					time = -refreshRate * 2;
+					direction = evasion / b;
+				}
+					
+			} else {
 				// if obstacle is found, add the flee direction from this obstacle
-				direction += avoidObstacles();
-				direction /= (a+b);
+				direction += evasion;
+				direction /= (a + b);
+				System.out.println("Avoiding obstacle.");
 			}
-
 		}
 
 		// if direction exceeds limit of pi
-		if(direction<-pi)direction+=(2*pi);else if(direction>pi)direction-=(2*pi);
+		// if(direction<-pi)direction+=(2*pi);else if(direction>pi)direction-=(2*pi);
 
 	}
 
@@ -207,73 +219,92 @@ public class Rocky extends AI {
 		double fleeDirection = 0;
 		// for memorizing the closest obstacle found in scan
 		closestObst = new Point();
+		Point scanPos = new Point();
 		// for memorizing the distance values of currently closest obstacle ((s+s/2))
-		int cDis = s;
+		int cDis = s * 10;
 		// compare value for nearest found obstacle
 		int cn = s;
 		// for each obstacle in the scene
 		for (Path2D o : obstacles) {
 			// only if distance to goal is larger than the chosen ignore range (see field
 			// section)
-			if (disTotal > scanIgnore) {
-				// for each obstacle from 1 distance to chosen scan range
-				for (int n = 0; n <= s; n++) {
-					// search left and right
-					for (int x = -1; x <= 1; x++) {
-						// search up and down
-						for (int y = -1; y <= 1; y++) {
-							// check current range in each direction (like a circle)
-							if (o.contains(player.x + n * x, player.y + n * y)) {
-								// if the found obstacle is closer than last found closest obstacle (or scan
-								// range)
-								if (n <= cn) {
-									// now check more specific for distance;
-									// is distance to checked obstacle is smaller than to the last closest
-									if (calcDistance(player.x, player.y, player.x + n * x, player.y + n * y) < cDis) {
-										// only if in a radius of 90 degrees to each side
-										if (seek(player.x, player.y, player.x + n * x, player.y + n * y) > direction
-												- pi / 2
-												|| seek(player.x, player.y, player.x + n * x,
-														player.y + n * y) < direction + pi / 2) {
-											// memorize position of currently closest obstacle
-											closestObst.x = player.x + n * x;
-											closestObst.y = player.y + n * y;
-											// mark closeness value as new closest one
-											cn = n;
-											// memorize distance to the currently closest obstacle
-											cDis = calcDistance(player.x, player.y, player.x + n * x, player.y + n * y);
-											// marks that (at least 1) obstacle was found (see further down)
-											fleeDirection = 10;
-										}
+
+			// for each obstacle from 0 distance to chosen scan range
+			for (int n = 0; n <= s; n++) {
+				// search left and right
+				for (int x = -n; x <= n; x++) {
+					// search up and down
+					for (int y = -n; y <= n; y++) {
+						// check current range in each direction (like a circle)
+						scanPos.x = player.x + x;
+						scanPos.y = player.y + y;
+						if (o.contains(scanPos)) {
+							// if the found obstacle is closer than last found closest obstacle (or scan
+							// range)
+
+							if (n <= cn) {
+								// now check more specific for distance;
+								// is distance to checked obstacle is smaller than to the last closest
+								if (calcDistance(player, scanPos) < cDis) {
+									// only if in a radius of 90 degrees to each side
+									// if (seek(player.x, player.y, player.x + n * x, player.y + n * y) > direction
+									// - pi / 2
+									// || seek(player.x, player.y, player.x + n * x,
+									// player.y + n * y) < direction + pi / 2) {
+									// memorize position of currently closest obstacle
+									closestObst.x = scanPos.x;
+									closestObst.y = scanPos.y;
+									// mark closeness value as new closest one
+									cn = n;
+									// memorize distance to the currently closest obstacle
+									cDis = calcDistance(player, scanPos);
+									// marks that (at least 1) obstacle was found (see further down)
+
+									// if an obstacle is in the panic area, mark this for the method return with
+									// 15
+									fleeDirection = -1;
+									if (cDis <= panicArea) {
+										panicMode = true;
+										// else, if such an obstacle was not found, mark it for usual avoidance
+										// calculation
 									}
+
 								}
 							}
+							// }//
 						}
 					}
 				}
 			}
+
 		}
 
 		// if at least 1 obstacle was found (as to not screw up direction if there
 		// wasn't)
-		if (fleeDirection == 10) {
-			if (terminalTracking) {
-				System.out.println("Closeness to obstacle: " + cDis);
-				System.out.println();
-			}
-			// take direction for diving directly towards closest obstacle
-			fleeDirection = seek(player, closestObst);
-			// from there, turn right for 90 degrees divided by closeness (more distance to
-			// obstacle = less avoiding)
-			if (goal.x > player.x) {
-				// flee to the left
-				fleeDirection += pi / cn;
+		if (fleeDirection != 0) {
+			if (panicMode != true) {
+				if (terminalTracking) {
+					System.out.println("Closeness to obstacle: " + cDis);
+					System.out.println();
+				}
+				// take direction for diving directly towards closest obstacle
+				fleeDirection = seek(player, closestObst);
+				// from there, turn right for 90 degrees divided by closeness (more distance to
+				// obstacle = less avoiding)
+				if (goal.x > player.x) {
+					// flee to the left
+					fleeDirection += pi;
+				} else {
+					// flee to the right
+					fleeDirection -= pi;
+				}
+				fleeDirection /= cn;
+				// divide by factor
+				fleeDirection *= b;
 			} else {
-				// flee to the right
-				fleeDirection -= pi / cn;
+				fleeDirection = flee(player, closestObst);
 			}
-			// divide by factor
-			fleeDirection *= b;
+
 		}
 
 		// if (cn <= panicArea) fleeDirection = 5;
@@ -296,7 +327,11 @@ public class Rocky extends AI {
 			// tracking of the distance to the goal
 			System.out.println("Distance: (" + disX + "/" + disY + "), total (average): " + disTotal);
 			// tracking of the player direction
-			System.out.println("Direction: " + direction + "(Pi) Degrees: " + (int) ((Math.toDegrees(direction))) + "°");
+			System.out
+					.println("Direction: " + direction + "(Pi) Degrees: " + (int) ((Math.toDegrees(direction))) + "°");
+			if (panicMode == true) {
+				System.out.println("Panic mode is active!");
+			}
 			System.out.println();
 		}
 	}
